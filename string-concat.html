@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>string splice — concatenation</title>
+<style>
+  :root {
+    --paper: #f3eee2;
+    --paper-raised: #fbf8f0;
+    --card-line: #d9d0ba;
+    --ink: #2b2620;
+    --ink-soft: #6b6354;
+    --rust: #b5502c;
+    --rust-soft: #d98c6a;
+    --tape-a: #ead9b8;
+    --tape-b: #c9dccb;
+    --mono: "JetBrains Mono", "SF Mono", "Consolas", monospace;
+    --display: "Space Grotesk", "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--paper);
+    background-image:
+      radial-gradient(ellipse 70% 40% at 50% -5%, rgba(181,80,44,0.06), transparent),
+      repeating-linear-gradient(90deg, rgba(0,0,0,0.012) 0px, rgba(0,0,0,0.012) 1px, transparent 1px, transparent 26px);
+    color: var(--ink);
+    font-family: var(--display);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 48px 20px 80px;
+  }
+
+  .wrap { width: 100%; max-width: 720px; }
+
+  header { margin-bottom: 32px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--rust);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .eyebrow::before {
+    content: "✂";
+    font-size: 12px;
+  }
+
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 10px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+  h1 code { font-family: var(--mono); color: var(--rust); font-weight: 500; background: none; }
+
+  .sub { color: var(--ink-soft); font-size: 15px; line-height: 1.55; max-width: 56ch; }
+  .sub code {
+    font-family: var(--mono); color: var(--ink); background: var(--paper-raised);
+    border: 1px solid var(--card-line);
+    padding: 1px 6px; border-radius: 4px; font-size: 0.92em;
+  }
+
+  .panel {
+    background: var(--paper-raised);
+    border: 1px solid var(--card-line);
+    border-radius: 4px;
+    padding: 30px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.03), 0 12px 30px -18px rgba(43,38,32,0.25);
+  }
+
+  /* --- setup stage --- */
+  .field { position: relative; margin-bottom: 20px; }
+  .field label {
+    display: block;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-soft); letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 7px;
+  }
+  input[type="text"] {
+    width: 100%; background: var(--paper); border: 1px solid var(--card-line); border-radius: 3px;
+    padding: 14px 14px; font-family: var(--mono); font-size: 17px; color: var(--ink); outline: none;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  input[type="text"]::placeholder { color: #a89e88; }
+  input[type="text"]:focus { border-color: var(--rust-soft); background: #fff; }
+  input[type="text"].error { border-color: #c0473a; }
+
+  button {
+    font-family: var(--mono); font-size: 13px; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: none; border-radius: 3px; padding: 0 22px; cursor: pointer; height: 50px;
+    transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease;
+  }
+  button.primary { color: #fff; background: var(--rust); width: 100%; }
+  button.primary:hover { background: #a04527; }
+  button.primary:active { transform: scale(0.985); }
+  button.ghost {
+    color: var(--ink-soft); background: transparent; border: 1px solid var(--card-line);
+    height: 36px; padding: 0 14px; text-transform: none; letter-spacing: 0.01em;
+  }
+  button.ghost:hover { color: var(--ink); border-color: var(--rust-soft); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .hint { margin-top: 10px; font-family: var(--mono); font-size: 12px; color: var(--ink-soft); min-height: 16px; }
+  .hint.error { color: #c0473a; }
+
+  /* --- splice stage --- */
+  .stage { display: none; }
+  .stage.active { display: block; }
+
+  .meta-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; flex-wrap: wrap; gap: 8px; }
+  .meta-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
+  .progress { font-family: var(--mono); font-size: 13px; color: var(--ink-soft); }
+  .progress strong { color: var(--rust); font-weight: 600; }
+
+  /* two source tapes stacked, feeding into one result tape below */
+  .tape-section { margin-bottom: 10px; }
+  .tape-tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-soft); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+  }
+  .tape-tag .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .tape-tag.a .dot { background: #b7913a; }
+  .tape-tag.b .dot { background: #5f8f64; }
+
+  .tape {
+    display: flex;
+    gap: 3px;
+    padding: 4px;
+    border-radius: 3px;
+    flex-wrap: wrap;
+  }
+  .tape.a { background: var(--tape-a); }
+  .tape.b { background: var(--tape-b); }
+
+  .letter {
+    width: 28px;
+    height: 32px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 15px;
+    color: var(--ink);
+    background: rgba(255,255,255,0.55);
+    border-radius: 2px;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  .letter.used { opacity: 0.25; transform: scale(0.9); }
+  .letter.feeding {
+    background: #fff;
+    box-shadow: 0 0 0 2px var(--rust-soft);
+  }
+
+  .splice-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 16px 0;
+    color: var(--ink-soft);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .splice-divider::before, .splice-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: repeating-linear-gradient(90deg, var(--card-line) 0, var(--card-line) 4px, transparent 4px, transparent 8px);
+  }
+
+  .result-tape-wrap {
+    background: var(--paper);
+    border: 1px dashed var(--card-line);
+    border-radius: 3px;
+    padding: 14px;
+    min-height: 64px;
+  }
+  .result-tape {
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
+  }
+  .result-tape .letter {
+    background: #fff;
+    border: 1px solid var(--card-line);
+  }
+  .result-tape .letter.from-a { border-color: #b7913a; }
+  .result-tape .letter.from-b { border-color: #5f8f64; }
+  .result-tape .letter.space-slot { background: transparent; border: none; width: 14px; }
+  .result-tape .letter.pending {
+    background: transparent;
+    border: 1px dashed var(--card-line);
+    color: transparent;
+  }
+  .result-tape .letter.just-landed {
+    animation: land 0.3s ease;
+  }
+  @keyframes land {
+    0% { transform: translateY(-14px) scale(0.85); opacity: 0; }
+    100% { transform: translateY(0) scale(1); opacity: 1; }
+  }
+
+  .trace {
+    margin-top: 16px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    background: var(--paper);
+    border: 1px solid var(--card-line);
+    border-radius: 3px;
+    padding: 11px 13px;
+    height: 70px;
+    overflow-y: auto;
+    line-height: 1.7;
+  }
+  .trace .line.done { color: #4a7a4f; }
+
+  .controls { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+
+  .result-row {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--card-line);
+    font-family: var(--mono);
+    font-size: 14px;
+  }
+  .result-row .label { color: var(--ink-soft); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; display: block; margin-bottom: 6px; }
+  .result-row .value { color: var(--rust); font-size: 18px; word-break: break-all; font-weight: 600; }
+
+  footer {
+    margin-top: 28px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+    text-align: center;
+    line-height: 1.7;
+  }
+
+  @media (max-width: 480px) {
+    h1 { font-size: 24px; }
+    .panel { padding: 18px; }
+    .letter { width: 22px; height: 28px; font-size: 12px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .letter, .result-tape .letter.just-landed { transition: none; animation: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="eyebrow">String Concatenation</div>
+      <h1>Concatenate two strings <code>one</code></h1>
+      <p class="sub">
+        Type two words or phrases. The second tape feeds its letters one at a time onto the end of
+        the first — with a space spliced in between — exactly like the original C loop copying
+        <code>str1</code> into <code>str</code> character by character.
+      </p>
+    </header>
+
+    <div class="panel">
+
+      <!-- STAGE 1: input -->
+      <div class="stage active" id="setupStage">
+        <div class="field">
+          <label for="str1Input">FIRST STRING</label>
+          <input type="text" id="str1Input" placeholder="e.g. hello" autocomplete="off" maxlength="40" />
+        </div>
+        <div class="field">
+          <label for="str2Input">SECOND STRING</label>
+          <input type="text" id="str2Input" placeholder="e.g. world" autocomplete="off" maxlength="40" />
+        </div>
+        <button class="primary" id="loadBtn">Concatenate strings →</button>
+        <div class="hint" id="setupHint">Single words work best — scanf("%s") style, no spaces inside each one.</div>
+      </div>
+
+      <!-- STAGE 2: splice -->
+      <div class="stage" id="spliceStage">
+        <div class="meta-row">
+          <span class="meta-label">splicing in progress</span>
+          <span class="progress">letters fed: <strong id="fedCount">0</strong> / <span id="totalCount">0</span></span>
+        </div>
+
+        <div class="tape-section">
+          <div class="tape-tag a"><span class="dot"></span>str (base)</div>
+          <div class="tape a" id="tapeA"></div>
+        </div>
+
+        <div class="tape-section">
+          <div class="tape-tag b"><span class="dot"></span>str1 (being spliced in)</div>
+          <div class="tape b" id="tapeB"></div>
+        </div>
+
+        <div class="splice-divider">result</div>
+
+        <div class="result-tape-wrap">
+          <div class="result-tape" id="resultTape"></div>
+        </div>
+
+        <div class="trace" id="trace"></div>
+
+        <div class="controls">
+          <button class="primary" id="stepBtn" style="width:auto;">Feed next letter →</button>
+          <button class="primary" id="runBtn" style="width:auto;">Splice all ▶</button>
+          <button class="ghost" id="resetBtn">New strings</button>
+        </div>
+
+        <div class="result-row" id="resultRow" style="display:none;">
+          <span class="label">both strings together</span>
+          <span class="value" id="resultVal"></span>
+        </div>
+      </div>
+
+    </div>
+
+    <footer>
+      Source loop: <code>for(j=0; str1[j]; j++,i++) str[i]=str1[j];</code><br>
+      Built from the original C program — runs entirely in your browser.
+    </footer>
+  </div>
+
+<script>
+  const setupStage = document.getElementById('setupStage');
+  const spliceStage = document.getElementById('spliceStage');
+  const str1Input = document.getElementById('str1Input');
+  const str2Input = document.getElementById('str2Input');
+  const loadBtn = document.getElementById('loadBtn');
+  const setupHint = document.getElementById('setupHint');
+  const tapeA = document.getElementById('tapeA');
+  const tapeB = document.getElementById('tapeB');
+  const resultTape = document.getElementById('resultTape');
+  const traceEl = document.getElementById('trace');
+  const fedCountEl = document.getElementById('fedCount');
+  const totalCountEl = document.getElementById('totalCount');
+  const stepBtn = document.getElementById('stepBtn');
+  const runBtn = document.getElementById('runBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const resultRow = document.getElementById('resultRow');
+  const resultVal = document.getElementById('resultVal');
+
+  const SETUP_HINT_DEFAULT = 'Single words work best — scanf("%s") style, no spaces inside each one.';
+
+  let base = [];   // characters of str (base + space + eventually str1 chars)
+  let second = [];  // characters of str1
+  let baseLen = 0;
+  let totalLen = 0;
+  let fed = 0;
+  let finished = false;
+  let runningToEnd = false;
+
+  function setSetupError(msg) {
+    setupHint.classList.add('error');
+    setupHint.textContent = msg;
+  }
+  function clearSetupError() {
+    setupHint.classList.remove('error');
+    setupHint.textContent = SETUP_HINT_DEFAULT;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  loadBtn.addEventListener('click', () => {
+    const s1 = str1Input.value.trim();
+    const s2 = str2Input.value.trim();
+    if (!s1 || !s2) { setSetupError('Enter both strings first.'); return; }
+    if (/\s/.test(s1) || /\s/.test(s2)) {
+      setSetupError('No spaces inside each string — scanf("%s") stops at the first space.');
+      return;
+    }
+    clearSetupError();
+    startSplice(s1, s2);
+  });
+  [str1Input, str2Input].forEach(el => {
+    el.addEventListener('input', () => clearSetupError());
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadBtn.click(); });
+  });
+
+  function startSplice(s1, s2) {
+    base = s1.split('');
+    second = s2.split('');
+    baseLen = base.length;
+    totalLen = baseLen + 1 + second.length; // +1 for the spliced-in space
+    fed = 0;
+    finished = false;
+    runningToEnd = false;
+
+    fedCountEl.textContent = '0';
+    totalCountEl.textContent = second.length;
+    traceEl.innerHTML = '';
+    resultRow.style.display = 'none';
+
+    renderSourceTapes();
+    renderResultTape();
+    addTraceLine(`str="${s1}", str1="${s2}". space inserted at index ${baseLen}.`, '');
+
+    setupStage.classList.remove('active');
+    spliceStage.classList.add('active');
+    stepBtn.disabled = false;
+    runBtn.disabled = false;
+  }
+
+  function renderSourceTapes() {
+    tapeA.innerHTML = '';
+    base.forEach((ch) => {
+      const cell = document.createElement('div');
+      cell.className = 'letter';
+      cell.textContent = ch;
+      tapeA.appendChild(cell);
+    });
+
+    tapeB.innerHTML = '';
+    second.forEach((ch, idx) => {
+      const cell = document.createElement('div');
+      cell.className = 'letter';
+      if (idx < fed) cell.classList.add('used');
+      if (idx === fed && !finished) cell.classList.add('feeding');
+      cell.textContent = ch;
+      tapeB.appendChild(cell);
+    });
+  }
+
+  function renderResultTape(justLandedIdx = -1) {
+    resultTape.innerHTML = '';
+    // base characters
+    base.forEach((ch) => {
+      const cell = document.createElement('div');
+      cell.className = 'letter from-a';
+      cell.textContent = ch;
+      resultTape.appendChild(cell);
+    });
+    // spliced space
+    const spaceCell = document.createElement('div');
+    spaceCell.className = 'letter space-slot';
+    resultTape.appendChild(spaceCell);
+
+    // fed characters from str1 + pending placeholders
+    second.forEach((ch, idx) => {
+      const cell = document.createElement('div');
+      if (idx < fed) {
+        cell.className = 'letter from-b';
+        if (idx === justLandedIdx) cell.classList.add('just-landed');
+        cell.textContent = ch;
+      } else {
+        cell.className = 'letter pending';
+        cell.textContent = '_';
+      }
+      resultTape.appendChild(cell);
+    });
+  }
+
+  function addTraceLine(text, cls) {
+    const line = document.createElement('div');
+    line.className = 'line ' + (cls || '');
+    line.textContent = text;
+    traceEl.appendChild(line);
+    traceEl.scrollTop = traceEl.scrollHeight;
+  }
+
+  function step() {
+    if (finished) return;
+
+    if (fed >= second.length) {
+      finished = true;
+      renderSourceTapes();
+      renderResultTape();
+      addTraceLine('null terminator placed — concatenation complete.', 'done');
+      showResult();
+      stepBtn.disabled = true;
+      runBtn.disabled = true;
+      return;
+    }
+
+    const ch = second[fed];
+    const destIdx = baseLen + 1 + fed;
+    addTraceLine(`str[${destIdx}] = str1[${fed}] = '${ch}'`, '');
+    fed++;
+    fedCountEl.textContent = fed;
+    renderSourceTapes();
+    renderResultTape(fed - 1);
+
+    if (fed >= second.length) {
+      finished = true;
+      addTraceLine('null terminator placed — concatenation complete.', 'done');
+      showResult();
+      stepBtn.disabled = true;
+      runBtn.disabled = true;
+    }
+  }
+
+  function showResult() {
+    resultRow.style.display = 'block';
+    resultVal.textContent = base.join('') + ' ' + second.join('');
+  }
+
+  stepBtn.addEventListener('click', () => { runningToEnd = false; step(); });
+
+  runBtn.addEventListener('click', () => {
+    if (finished) return;
+    runningToEnd = true;
+    runBtn.disabled = true;
+    stepBtn.disabled = true;
+    const interval = setInterval(() => {
+      if (!runningToEnd) { clearInterval(interval); return; }
+      step();
+      if (finished) clearInterval(interval);
+    }, 260);
+  });
+
+  resetBtn.addEventListener('click', () => {
+    runningToEnd = false;
+    spliceStage.classList.remove('active');
+    setupStage.classList.add('active');
+    str1Input.value = '';
+    str2Input.value = '';
+    clearSetupError();
+  });
+</script>
+</body>
+</html>
